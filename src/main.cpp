@@ -5,6 +5,7 @@
 #include <PID_v1.h>
 #include <PID_AutoTune_v0.h>
 #include <stdio.h>
+#include <Tuner.h>
 
 // Драйвер моторов
 #define AIN1 9
@@ -45,46 +46,6 @@ void debugFloat(float val) {
   Serial.print(buff);
 }
 
-
-/**
- * Создает натяжение с заданными параметрами:
- * Натянет мотор до числа тиков encoder \c stopAt
- * Крутить будет с равномерно увеличивающейся скоростью, которая будет измениться раз в \c interval ms
- * на \c speedStep pwm, но не превышая скорость \c maxSpeed.
- */
-void createTorsion(int stopAt, int maxSpeed, int speedStep, int interval) {
-    motor.brake();  
-
-    debugln("Start creating torsion, will stop at %d. max speed: %d; speed step: %d; interval: %d", stopAt, maxSpeed, speedStep, interval);
-
-    int cur = 0;
-    encoder.write(cur);
-
-    int speed = 30;
-    while (cur < stopAt)
-    {
-      speed = min(min(speed + speedStep, maxSpeed), 255);
-
-      debugln("Next speed: %d", speed);
-
-      // чтобы вовремя остановиться, если достигнем число тиков в текущем интервале
-      int duration = 0;
-      while (cur < stopAt && duration < interval)
-      {
-        motor.drive(speed, 5);
-        duration += 5;
-        cur = encoder.read();
-      }
-      
-      debugln("Moved to: %d, %d encoder ticks left", cur, (stopAt - cur)); 
-    }
-
-    debugln("Torsion created. Going to standby mode");
-
-    motor.brake();
-    motor.standby();
-}
-
 void liftUp() {
   servo.write(-180);
   delay(1000);
@@ -107,57 +68,27 @@ bool readyToThrow(int target) {
 
 
 const int encoderTarget = 10000;
-const int maxSpeed = 150;
+const int maxSpeed = 100;
 
 
-double Setpoint, Input, Output;
+double Input, Output, Setpoint;
+
+// double kp = 0.1379, ki = 0.113, kd = 0.4181;
+// double kp = 0.914, ki = 0.48, kd = 0;
 double kp = 0.916, ki = 0.54, kd = 0;
 
 PID pid = PID(&Input, &Output, &Setpoint, kp, ki, kd, DIRECT);
-PID_ATune aTune(&Input, &Output);
-
-boolean tuning = false;
-byte ATuneModeRemember = 2;
-double aTuneStep = maxSpeed, aTuneNoise = 5, aTuneStartValue = 0;
-
-unsigned int aTuneLookBack = 10;
-long position = 0L;
-
-void AutoTuneHelper(boolean start)
-{
-  if(start)
-    ATuneModeRemember = pid.GetMode();
-  else
-    pid.SetMode(ATuneModeRemember);
-}
 
 
-void changeAutoTune()
-{
- if(!tuning)
-  {
-    //Set the output to the desired starting frequency.
-    Output = aTuneStartValue;
-    aTune.SetNoiseBand(aTuneNoise);
-    aTune.SetOutputStep(aTuneStep);
-    aTune.SetLookbackSec((int)aTuneLookBack);
-    AutoTuneHelper(true);
-    tuning = true;
-  }
-  else
-  { //cancel autotune
-    aTune.Cancel();
-    tuning = false;
-    AutoTuneHelper(false);
-  }
-}
+Tuner* tuner = new Tuner(& motor, & encoder, {kp, ki, kd}, maxSpeed, 5, 0);
+bool tuning = true;
 
 
 void setup() {
   Serial.begin(9600);
   servo.attach(SERVO);
 
-  Input = encoder.read();
+  Input = 0;
   Setpoint = encoderTarget;
 
   pid.SetMode(AUTOMATIC);
@@ -166,79 +97,34 @@ void setup() {
 
   if(tuning)
   {
-    tuning=false;
-    changeAutoTune();
-    tuning=true;
+    tuner->setup(encoderTarget, maxSpeed);
   }
-
-  position = encoder.read();
 }
 
 
-int i = 0;
-int debugFreq = 10000;
 
 void loop() {
-  i++;
-  position += encoder.readAndReset();
-  
-  Input = position;
-  if (i % debugFreq == 0) {
-    Serial.print("Encoder: "); 
-    Serial.print(position < 0 ? "-" : ""); 
-    debugFloat(abs(position)); 
-    Serial.println();
-  }
-
-  if(tuning)
-    {
-      byte val = (aTune.Runtime());
-      if (val!=0)
-      {
-        tuning = false;
-      }
-      if(!tuning)
-      { //we're done, set the tuning parameters
-        kp = aTune.GetKp();
-        ki = aTune.GetKi();
-        kd = aTune.GetKd();
-        debugFloat(kp);
-        debugFloat(ki);
-        debugFloat(kd);
-
-        pid.SetTunings(kp, ki, kd);
-        AutoTuneHelper(false);
-      }
+  if (tuning) {
+    if (tuner->tune()) {
+      motor.standby();
+      Serial.println("Completed!");
+      Serial.flush();
+      exit(0);
     }
-    else pid.Compute();
+
+    return;
+  } 
+
+  Input = encoder.read();
+  debugln("Encoder: %d", encoder.read());
   
-  if (i % debugFreq == 0 && tuning) {
-    debugFloat(Output);
-    Serial.print("kp: ");
-    debugFloat(kp);
-    Serial.print("; ki: ");
-    debugFloat(ki);
-    Serial.print("; kd: ");
-    debugFloat(kd);
-  }
+  pid.Compute();
+
+  debugFloat(Output);
+  debugln("");
 
   motor.drive(Output);
 
-  if (i % debugFreq == 0) {
-    i = 0;
-  }
-
-  // Input = encoder.read();
-  // debugln("Encoder: %d", encoder.read());
-  
-  // pid.Compute();
-
-  // debugFloat(Output);
-  // debugFloat(Outpui);
-  // debugFloat(Outpud);
-  // debugln("");
-
-  // motor.drive(Output);
 
   // debugln("loop %d", i++);
   // if (readyToThrow(encoderTarget)) {
