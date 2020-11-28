@@ -46,42 +46,25 @@ void debugFloat(float val) {
   Serial.print(buff);
 }
 
-void liftUp() {
-  servo.write(-180);
-  delay(1000);
-}
-
-void putDown() {
-  servo.write(180);
-  delay(1000);
-}
-
-void stopPulling() {
-  motor.drive(0);
-  encoder.write(0);
-}
-
-bool readyToThrow(int target) {
-  motor.drive(255, 5000);
-  return true;
-}
-
 
 const int encoderTarget = 10000;
-const int maxSpeed = 100;
+const int maxSpeed = 230;
 
 
 double Input, Output, Setpoint;
 
 // double kp = 0.1379, ki = 0.113, kd = 0.4181;
-// double kp = 0.914, ki = 0.48, kd = 0;
-double kp = 0.916, ki = 0.54, kd = 0;
+double kp = 0.914, ki = 0.48, kd = 0;
+// double kp = 0.916, ki = 0.54, kd = 0;
 
 PID pid = PID(&Input, &Output, &Setpoint, kp, ki, kd, DIRECT);
 
 
-Tuner* tuner = new Tuner(& motor, & encoder, {kp, ki, kd}, maxSpeed, 5, 0);
-bool tuning = true;
+Tuner* tuner = new Tuner(& motor, & encoder, {kp, ki, kd}, maxSpeed, 5, 0, true);
+bool tuning = false;
+
+const int aims[6] = {1, 1, 1, 2, 2, 3};
+const int targets[4] = {-1, 3000, 5000, 8000};
 
 
 void setup() {
@@ -93,15 +76,21 @@ void setup() {
 
   pid.SetMode(AUTOMATIC);
   pid.SetOutputLimits(-maxSpeed, maxSpeed); 
-  pid.SetSampleTime(100);
+  pid.SetSampleTime(50);
 
-  if(tuning)
-  {
+  if(tuning) {
     tuner->setup(encoderTarget, maxSpeed);
   }
+  
+  motor.standby();
 }
 
+long iteration = 0;
 
+int aim = -1;
+int aimTarget = -1;
+int ballId = 0;
+long startedAt = 0;
 
 void loop() {
   if (tuning) {
@@ -111,19 +100,64 @@ void loop() {
       Serial.flush();
       exit(0);
     }
-
     return;
-  } 
+  }
+
+  if (ballId >= 6) {
+    return; // всех отстреляли
+  }
+
+  iteration++;
+
+  // Событие смены шарика
+  if (aim < 0 || aimTarget < 0) {
+    aim = aims[ballId];
+    aimTarget = targets[aim];
+
+    encoder.write(0);
+
+    Setpoint = aimTarget;
+    debugln("Ball: %d; Aim: %d; Encoder target: %d", ballId, aim, aimTarget);
+    
+    delay(3000); // задержка между заводами на всякий случай
+    startedAt = millis();
+  }
 
   Input = encoder.read();
-  debugln("Encoder: %d", encoder.read());
-  
   pid.Compute();
 
-  debugFloat(Output);
-  debugln("");
-
   motor.drive(Output);
+
+  bool ready = millis() - startedAt > 3000;
+  if (iteration % 1000 == 0 || ready) {
+    Serial.print("Iteration: ");
+    Serial.print(iteration);
+    Serial.print("; Encoder: ");
+    Serial.print(Input);
+    Serial.print("; PWM: ");
+    debugFloat(Output);
+    Serial.println();
+  }
+
+  if (ready) {
+    Serial.print("Completed. Diff: ");
+    debugFloat(abs(Input - aimTarget));
+    Serial.println();
+
+    Serial.flush();
+    
+    motor.standby();
+
+    // servo.write(-180); // поднять серво
+    delay(1000); 
+
+    // servo.write(180); // вернуть серво на место
+    delay(1000); 
+
+    ballId++;
+    aim = -1;
+    iteration = 0;
+  }
 
 
   // debugln("loop %d", i++);

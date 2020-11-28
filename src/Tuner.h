@@ -9,7 +9,7 @@ class Tuner {
     public:
     
         Tuner(Motor* motor, Encoder* encoder, Coefficients coeff, 
-double step, double noise, double startValue);
+double step, double noise, double startValue, bool pi);
 
         void setup(int encoderTarget, int maxSpeed);
 
@@ -27,6 +27,7 @@ double step, double noise, double startValue);
         double step;
         double noise;
         double startValue;
+        bool pi;
         Coefficients initialCoeff;
         
         double Setpoint, Input, Output;

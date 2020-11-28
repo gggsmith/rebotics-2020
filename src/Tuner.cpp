@@ -1,7 +1,7 @@
 #include <Tuner.h>
 
 Tuner::Tuner(Motor* motor, Encoder* encoder, Coefficients coeff, 
-double step, double noise, double startValue)
+double step, double noise, double startValue, bool pi)
 {
     this->motor = motor;
     this->encoder = encoder;
@@ -12,6 +12,7 @@ double step, double noise, double startValue)
     this->step = step;
     this->noise = noise;
     this->startValue = startValue;
+    this->pi = pi;
 }
 
 
@@ -33,13 +34,13 @@ void Tuner::setup(int encoderTarget, int maxSpeed)
     Output = aTuneStartValue;
 
     pid->SetOutputLimits(-maxSpeed, maxSpeed); 
-    pid->SetSampleTime(100);
+    pid->SetSampleTime(10);
     pid->SetMode(ATuneModeRemember);
 
     autoTune->SetNoiseBand(aTuneNoise);
     autoTune->SetOutputStep(aTuneStep);
     autoTune->SetLookbackSec((int)aTuneLookBack);
-    autoTune->SetControlType(1);
+    autoTune->SetControlType(pi ? 0 : 1);
 
     position = Input;   
 }
