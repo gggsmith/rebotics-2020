@@ -47,8 +47,8 @@ void debugFloat(float val) {
 }
 
 
-const int encoderTarget = 10000;
-const int maxSpeed = 230;
+const int encoderTarget = -10000;
+const int maxSpeed = 255;
 
 
 double Input, Output, Setpoint;
@@ -64,7 +64,8 @@ Tuner* tuner = new Tuner(& motor, & encoder, {kp, ki, kd}, maxSpeed, 5, 0, true)
 bool tuning = false;
 
 const int aims[6] = {1, 1, 1, 2, 2, 3};
-const int targets[4] = {-1, 3000, 5000, 8000};
+int aimsCount = 1;
+const int targets[4] = {-1, -1500, -2000, -2000};
 
 
 void setup() {
@@ -103,14 +104,14 @@ void loop() {
     return;
   }
 
-  if (ballId >= 6) {
+  if (ballId >= aimsCount) {
     return; // всех отстреляли
   }
 
   iteration++;
 
   // Событие смены шарика
-  if (aim < 0 || aimTarget < 0) {
+  if (aim < 0) {
     aim = aims[ballId];
     aimTarget = targets[aim];
 
@@ -148,11 +149,11 @@ void loop() {
     
     motor.standby();
 
-    // servo.write(-180); // поднять серво
+    servo.write(140); // поднять серво
     delay(1000); 
 
-    // servo.write(180); // вернуть серво на место
-    delay(1000); 
+    // servo.write(90); // вернуть серво на место
+    // delay(1000); 
 
     ballId++;
     aim = -1;
